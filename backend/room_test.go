@@ -113,15 +113,20 @@ func TestGameFlowKeepsIdentitiesSecret(t *testing.T) {
 		var leader float64
 		for _, m := range c.msgs {
 			if m["type"] == "room" && m["phase"] == "playing" {
-				card := m["leader"].(map[string]any)["card"].(map[string]any)
-				if card["role"] != "Leader" {
-					t.Fatalf("leader field carries a %v identity", card["role"])
+				up := faceUp(m)
+				if len(up) != 1 {
+					t.Fatalf("%d face-up identities at the start of a game, want 1 (the Leader)", len(up))
 				}
-				leader = card["id"].(float64)
+				for name, card := range up {
+					if card["role"] != "Leader" {
+						t.Fatalf("%s is face up with a %v identity at the start", name, card["role"])
+					}
+					leader = card["id"].(float64)
+				}
 			}
 		}
 		if leader == 0 {
-			t.Fatal("no playing room with a leader received")
+			t.Fatal("no playing room with a face-up Leader received")
 		}
 
 		for _, m := range c.msgs {
@@ -187,6 +192,125 @@ func TestCreateRejectsImpossibleSettings(t *testing.T) {
 }
 
 func errCode(m map[string]any) any { return m["error"].(map[string]any)["code"] }
+
+// faceUp returns the identities a room broadcast carries, keyed by player name.
+func faceUp(m map[string]any) map[string]map[string]any {
+	out := map[string]map[string]any{}
+	for _, p := range m["players"].([]any) {
+		pm := p.(map[string]any)
+		if card, ok := pm["card"].(map[string]any); ok {
+			out[pm["name"].(string)] = card
+		}
+	}
+	return out
+}
+
+func upCount(n int) func(map[string]any) bool {
+	return func(m map[string]any) bool { return len(faceUp(m)) == n }
+}
+
+// playGame sets a room up, readies everyone and starts the draw.
+// It returns the clients and the role each one was dealt, in seat order.
+func playGame(t *testing.T, srv *httptest.Server) ([]*testClient, []string) {
+	t.Helper()
+	_, clients, _ := setupRoom(t, srv)
+	for _, c := range clients {
+		c.send(map[string]any{"type": "ready", "value": true})
+	}
+	clients[0].waitFor("room", playersReady(4))
+	clients[0].send(map[string]any{"type": "start"})
+	roles := make([]string, len(clients))
+	for i, c := range clients {
+		roles[i] = c.waitFor("you", nil)["role"].(string)
+	}
+	return clients, roles
+}
+
+// seatNames mirrors the order setupRoom seats the players in.
+var seatNames = []string{"Alice", "Bob", "Chloé", "Dan"}
+
+// hiddenSeats returns the seats that were not dealt the Leader, so still face down.
+func hiddenSeats(t *testing.T, roles []string) []int {
+	t.Helper()
+	var seats []int
+	for i, r := range roles {
+		if r != "Leader" {
+			seats = append(seats, i)
+		}
+	}
+	if len(seats) < 2 {
+		t.Fatalf("roles %v: want at least two seats without the Leader", roles)
+	}
+	return seats
+}
+
+func TestUnveilShowsTheCardToEveryone(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	clients, roles := playGame(t, srv)
+	i := hiddenSeats(t, roles)[0]
+
+	clients[i].send(map[string]any{"type": "unveil"})
+
+	for _, c := range clients {
+		up := faceUp(c.waitFor("room", upCount(2)))
+		card, ok := up[seatNames[i]]
+		if !ok {
+			t.Fatalf("%s unveiled but their card is missing from the broadcast: %v", seatNames[i], up)
+		}
+		if card["role"] != roles[i] {
+			t.Fatalf("%s is face up as %v, want %v", seatNames[i], card["role"], roles[i])
+		}
+	}
+}
+
+func TestUnveilIsIgnoredInLobby(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	_, clients, _ := setupRoom(t, srv)
+
+	clients[1].send(map[string]any{"type": "unveil"})
+	clients[1].send(map[string]any{"type": "ready", "value": true})
+
+	m := clients[1].waitFor("room", playersReady(1))
+	if up := faceUp(m); len(up) != 0 {
+		t.Fatalf("unveil in the lobby put %v face up", up)
+	}
+}
+
+func TestUnveilIsOneWayAndIdempotent(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	clients, roles := playGame(t, srv)
+	seats := hiddenSeats(t, roles)
+	i, j := seats[0], seats[1]
+
+	clients[i].send(map[string]any{"type": "unveil"})
+	clients[i].waitFor("room", upCount(2))
+	clients[i].send(map[string]any{"type": "unveil"}) // repeat: must neither hide it nor duplicate it
+	clients[j].send(map[string]any{"type": "unveil"})
+
+	up := faceUp(clients[0].waitFor("room", upCount(3)))
+	if card := up[seatNames[i]]; card == nil || card["role"] != roles[i] {
+		t.Fatalf("after a repeated unveil, %s is %v, want %v", seatNames[i], card, roles[i])
+	}
+}
+
+func TestNewGameHidesIdentitiesAgain(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	clients, roles := playGame(t, srv)
+	i := hiddenSeats(t, roles)[0]
+	clients[i].send(map[string]any{"type": "unveil"})
+	clients[0].waitFor("room", upCount(2))
+
+	clients[0].send(map[string]any{"type": "reset"})
+
+	m := clients[i].waitFor("room", func(m map[string]any) bool { return m["phase"] == "lobby" })
+	if up := faceUp(m); len(up) != 0 {
+		t.Fatalf("new game left %v face up", up)
+	}
+}
 
 func TestSweepKeepsBrieflyAwayPlayers(t *testing.T) {
 	s := NewServer()

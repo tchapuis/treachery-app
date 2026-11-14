@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { codeFromUrl, useRoom } from './useRoom'
 import { LANGS, setLang, useI18n } from './i18n'
 import { useCatalog } from './catalog'
-import { roleOrder, type Card, type Rarity, type Role, type RoomView } from './types'
+import { roleOrder, type Card, type PlayerView, type Rarity, type Role, type RoomView } from './types'
 
 const RARITIES: Rarity[] = ['U', 'R', 'M', 'S']
 const CARD_COUNT = 62
@@ -434,10 +434,11 @@ function Game({
 }) {
   const { t, role } = useI18n()
   const [shown, setShown] = useState(false)
-  const [leaderShown, setLeaderShown] = useState(false)
-  const leader = room.leader
-  const leaderName = room.players.find((p) => p.id === leader?.playerId)?.name ?? ''
+  const [open, setOpen] = useState<PlayerView | null>(null)
+  const [asking, setAsking] = useState(false)
   const hide = () => setShown(false)
+  // my own card reaches the room view only once I unveil: until then the server keeps it to the "you" message
+  const unveiled = room.players.some((p) => p.id === playerId && p.card)
 
   return (
     <>
@@ -446,32 +447,45 @@ function Game({
         right={<button className="link" onClick={leave}>{t('leave')}</button>}
       />
 
-      {leader && (
-        <section className="leader">
-          <img src={`/cards/${leader.card.id}.jpg`} alt="" />
-          <div>
-            <div className="leader-top">
-              <span className="leader-name">{leaderName}</span>
-              <button className="link underline" onClick={() => setLeaderShown(true)}>
-                {t('see')}
-              </button>
+      <h2 className="caption gap">{t('table')}</h2>
+      <ul className="identities">
+        {room.players.map((p) => (
+          <li key={p.id} className={`identity ${p.card ? '' : 'face-down'}`}>
+            {p.card ? <img src={`/cards/${p.card.id}.jpg`} alt="" /> : <Diamond className="hollow" />}
+            <div>
+              <div className="identity-top">
+                <span className="identity-name">{p.name}</span>
+                {p.card ? (
+                  <button className="link underline" onClick={() => setOpen(p)}>
+                    {t('see')}
+                  </button>
+                ) : (
+                  p.id === playerId && <span className="note">{t('you')}</span>
+                )}
+              </div>
+              {p.card ? (
+                <>
+                  <span className={`italic role-${p.card.role}`}>{t('identityLine', { role: role(p.card.role) })}</span>
+                  <span className="muted small">{p.card.name}</span>
+                </>
+              ) : (
+                <span className="muted italic small">{t('faceDown')}</span>
+              )}
             </div>
-            <span className="gold-text italic">{t('identityLine', { role: role('Leader') })}</span>
-            <span className="muted small">{leader.card.name}</span>
-          </div>
-        </section>
-      )}
-      {leader && (
+          </li>
+        ))}
+      </ul>
+      {open?.card && (
         <Reveal
-          card={leader.card}
-          heading={t('leaderOf', { name: leaderName })}
+          card={open.card}
+          heading={t('identityOf', { name: open.name })}
           hint={t('tapToClose')}
-          shown={leaderShown}
-          onClose={() => setLeaderShown(false)}
+          shown
+          onClose={() => setOpen(null)}
         />
       )}
 
-      {me && (
+      {me && !unveiled && (
         <>
           <button
             type="button"
@@ -498,7 +512,15 @@ function Game({
         </>
       )}
 
-      <p className="muted roster">{room.players.map((p) => p.name).join(' · ')}</p>
+      {me &&
+        !unveiled &&
+        (asking ? (
+          <UnveilConfirm cancel={() => setAsking(false)} confirm={() => send({ type: 'unveil' })} />
+        ) : (
+          <button className="outline unveil" onClick={() => setAsking(true)}>
+            {t('unveil')}
+          </button>
+        ))}
       <GuideLinks open={openGuide} />
       {room.hostId === playerId && (
         <button className="outline" onClick={() => confirm(t('confirmNewGame')) && send({ type: 'reset' })}>
@@ -506,6 +528,30 @@ function Game({
         </button>
       )}
     </>
+  )
+}
+
+// Asked in the page rather than through confirm(): a browser that suppresses dialogs
+// (embedded view, "block further dialogs") answers no without showing anything, and the
+// unveil would be swallowed in silence.
+function UnveilConfirm({ cancel, confirm }: { cancel: () => void; confirm: () => void }) {
+  const { t } = useI18n()
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    cancelRef.current?.focus()
+  }, [])
+  return (
+    <div className="confirm" onKeyDown={(e) => e.key === 'Escape' && cancel()}>
+      <p className="italic">{t('confirmUnveil')}</p>
+      <div className="confirm-actions">
+        <button ref={cancelRef} className="link underline" onClick={cancel}>
+          {t('cancel')}
+        </button>
+        <button className="cta gold" onClick={confirm}>
+          {t('unveilNow')}
+        </button>
+      </div>
+    </div>
   )
 }
 

@@ -157,8 +157,8 @@ button:disabled { cursor: default; }
 .actions .outline { color: var(--muted); font-size: 16px; }
 
 /* Game */
-.leader {
-  margin-top: 16px;
+.identities { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.identity {
   border: 1px solid var(--gold-dim);
   box-shadow: inset 0 0 0 3px var(--bg), inset 0 0 0 4px var(--line);
   padding: 12px;
@@ -167,14 +167,19 @@ button:disabled { cursor: default; }
   gap: 14px;
   align-items: center;
 }
-.leader img { width: 64px; display: block; }
-.leader > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.leader-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.leader-name { font-size: 28px; font-weight: 700; line-height: 1.05; overflow: hidden; text-overflow: ellipsis; }
+/* a face-down seat is a name and a hollow diamond: the shape of the list shows how much is public */
+.identity.face-down { border-color: var(--line); box-shadow: none; padding: 7px 12px; }
+.identity.face-down .diamond { justify-self: center; }
+.identity.face-down .identity-name { font-size: 20px; font-weight: 400; }
+.identity img { width: 64px; display: block; }
+.identity > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.identity-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.identity-name { font-size: 28px; font-weight: 700; line-height: 1.05; overflow: hidden; text-overflow: ellipsis; }
 .secret {
   margin-top: 10px;
   flex: 1;
-  min-height: 300px;
+  /* shrinks on a short screen so the unveil button underneath stays above the fold */
+  min-height: clamp(170px, 26dvh, 300px);
   background: var(--panel);
   border: 1px solid var(--line);
   box-shadow: inset 0 0 0 6px var(--panel), inset 0 0 0 7px var(--line);
@@ -195,8 +200,27 @@ button:disabled { cursor: default; }
 }
 .diamond.huge { width: 64px; height: 64px; border-color: var(--gold); }
 .hold { font-size: 32px; font-weight: 700; line-height: 1.1; text-wrap: balance; margin-top: 8px; }
-.roster { margin-top: 14px; font-size: 15px; }
-.roster + .outline { margin-top: 10px; }
+/* on a phone the hold block is what pushes the unveil button off screen: compact it there */
+@media (max-height: 900px) {
+  .secret { padding: 18px; gap: 14px; }
+  .diamond.huge { width: 48px; height: 48px; }
+  .hold { font-size: 27px; margin-top: 4px; }
+}
+.unveil { margin-top: 10px; }
+.unveil + .outline { margin-top: 8px; }
+.confirm {
+  margin-top: 10px;
+  border: 1px solid var(--gold-dim);
+  background: var(--panel);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+.confirm-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.confirm-actions .cta { flex: 1; }
+.confirm + .outline { margin-top: 8px; }
 
 .reveal {
   position: fixed;

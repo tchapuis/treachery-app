@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { FakeSocket } from './test/fakeSocket'
@@ -15,9 +15,14 @@ const playing: RoomView = {
   settings: { playerCount: 4, rarities: ['U', 'M'] },
   players: [
     { id: 'p1', name: 'Alice', ready: true, connected: true },
-    { id: 'p2', name: 'Bob', ready: true, connected: true },
+    { id: 'p2', name: 'Bob', ready: true, connected: true, card: leaderCard },
   ],
-  leader: { playerId: 'p2', card: leaderCard },
+}
+
+// the same room once Alice has unveiled: her card is public too
+const aliceUnveiled: RoomView = {
+  ...playing,
+  players: [{ ...playing.players[0], card }, playing.players[1]],
 }
 
 beforeEach(() => {
@@ -44,11 +49,19 @@ describe('Game screen', () => {
     startGame()
     expect(screen.getByText('Bob')).toBeTruthy()
     expect(screen.getByText('The Void Tyrant')).toBeTruthy()
-    const full = screen.getByText('leader: Bob').closest('.reveal')!
-    expect(full.className).not.toContain('shown')
+    expect(screen.queryByText('identity: Bob')).toBeNull()
     fireEvent.click(screen.getByText('See'))
+    const full = screen.getByText('identity: Bob').closest('.reveal')!
     expect(full.className).toContain('shown')
     expect(screen.getByText('062/062 · m · ill. Other')).toBeTruthy()
+  })
+
+  it('keeps the other seats face down', () => {
+    startGame()
+    const alice = screen.getByText('Alice').closest('.identity') as HTMLElement
+    expect(alice.className).toContain('face-down')
+    expect(within(alice).getByText('face down')).toBeTruthy()
+    expect(within(alice).queryByText('See')).toBeNull()
   })
 
   it('reveals the secret card only while held', () => {
@@ -73,5 +86,39 @@ describe('Game screen', () => {
     fireEvent.pointerDown(secret)
     fireEvent.pointerLeave(secret)
     expect(reveal.className).not.toContain('shown')
+  })
+
+  it('asks in the page before unveiling and sends nothing when the player backs out', () => {
+    startGame()
+    fireEvent.click(screen.getByText('Unveil my identity'))
+    expect(screen.getByText(/cannot be undone/)).toBeTruthy()
+    expect(FakeSocket.last.sent).toEqual([])
+
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(screen.queryByText(/cannot be undone/)).toBeNull()
+    expect(screen.getByText('Unveil my identity')).toBeTruthy()
+    expect(FakeSocket.last.sent).toEqual([])
+  })
+
+  // a browser that suppresses dialogs answers confirm() with false and swallows the unveil
+  it('unveils once confirmed, without a browser dialog', () => {
+    startGame()
+    const dialog = vi.spyOn(window, 'confirm')
+    fireEvent.click(screen.getByText('Unveil my identity'))
+    fireEvent.click(screen.getByText('Unveil'))
+    expect(FakeSocket.last.sent).toEqual([{ type: 'unveil' }])
+    expect(dialog).not.toHaveBeenCalled()
+  })
+
+  it('drops the hold-to-reveal block once my identity is public', () => {
+    startGame()
+    act(() => FakeSocket.last.serverSend(aliceUnveiled))
+
+    expect(screen.queryByText('Hold to reveal')).toBeNull()
+    expect(screen.queryByText('Unveil my identity')).toBeNull()
+    const alice = screen.getByText('Alice').closest('.identity') as HTMLElement
+    expect(alice.className).not.toContain('face-down')
+    expect(within(alice).getByText('The Oracle')).toBeTruthy()
+    expect(within(alice).getByText('Identity — Guardian')).toBeTruthy()
   })
 })

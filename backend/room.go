@@ -38,16 +38,13 @@ type Settings struct {
 	Rarities    []string `json:"rarities"`
 }
 
+// Card is set only for an unveiled player: a face-up identity is public.
 type playerView struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Ready     bool   `json:"ready"`
 	Connected bool   `json:"connected"`
-}
-
-type leaderView struct {
-	PlayerID string `json:"playerId"`
-	Card     Card   `json:"card"`
+	Card      *Card  `json:"card,omitempty"`
 }
 
 type roomView struct {
@@ -57,7 +54,6 @@ type roomView struct {
 	HostID   string       `json:"hostId"`
 	Settings Settings     `json:"settings"`
 	Players  []playerView `json:"players"`
-	Leader   *leaderView  `json:"leader,omitempty"`
 }
 
 type client struct {
@@ -70,6 +66,7 @@ type client struct {
 type Player struct {
 	ID, Name, token string
 	Ready           bool
+	Unveiled        bool // identity turned face up: public, and never undone until the next game
 	card            *Card
 	client          *client
 	leftAt          time.Time
@@ -239,6 +236,7 @@ func (s *Server) handle(cl *client, m *inMsg) error {
 		}
 		for i, p := range room.Players {
 			p.card = &hand[i]
+			p.Unveiled = p.card.Role == "Leader" // the Leader starts face up
 			slog.Info("dealt", "room", room.Code, "player", p.Name, "role", p.card.Role, "card", p.card.Name)
 		}
 		room.Phase = "playing"
@@ -248,6 +246,17 @@ func (s *Server) handle(cl *client, m *inMsg) error {
 				p.client.write(youMsg(p))
 			}
 		}
+	case "unveil":
+		room := cl.room
+		// unveiling is self-service: the message carries no target, so nobody can unveil anyone else
+		if room == nil || cl.player == nil || room.Phase != "playing" || cl.player.card == nil {
+			return nil
+		}
+		if cl.player.Unveiled {
+			return nil // one-way and idempotent: a double tap is not an error
+		}
+		cl.player.Unveiled = true
+		s.broadcast(room)
 	case "reset":
 		room := cl.room
 		if room == nil || room.HostID != cl.player.ID {
@@ -255,7 +264,7 @@ func (s *Server) handle(cl *client, m *inMsg) error {
 		}
 		room.Phase = "lobby"
 		for _, p := range room.Players {
-			p.card, p.Ready = nil, false
+			p.card, p.Ready, p.Unveiled = nil, false, false
 		}
 		s.broadcast(room)
 	}
@@ -290,14 +299,16 @@ func (s *Server) disconnect(cl *client) {
 	s.broadcast(cl.room)
 }
 
-// broadcast must never carry another player's identity, except the Leader's.
+// broadcast carries a player's identity if and only if that player is unveiled.
+// Fields are named on purpose: a positional literal would silently shift a card to another seat.
 func (s *Server) broadcast(room *Room) {
 	v := roomView{Type: "room", Code: room.Code, Phase: room.Phase, HostID: room.HostID, Settings: room.Settings}
 	for _, p := range room.Players {
-		v.Players = append(v.Players, playerView{p.ID, p.Name, p.Ready, p.client != nil})
-		if p.card != nil && p.card.Role == "Leader" {
-			v.Leader = &leaderView{p.ID, *p.card}
+		pv := playerView{ID: p.ID, Name: p.Name, Ready: p.Ready, Connected: p.client != nil}
+		if p.Unveiled {
+			pv.Card = p.card
 		}
+		v.Players = append(v.Players, pv)
 	}
 	for _, p := range room.Players {
 		if p.client != nil {

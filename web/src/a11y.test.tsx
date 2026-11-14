@@ -15,9 +15,8 @@ const room: RoomView = {
   settings: { playerCount: 4, rarities: ['R', 'M'] },
   players: [
     { id: 'p1', name: 'Alice', ready: true, connected: true },
-    { id: 'p2', name: 'Bob', ready: true, connected: true },
+    { id: 'p2', name: 'Bob', ready: true, connected: true, card: leaderCard },
   ],
-  leader: { playerId: 'p2', card: leaderCard },
 }
 
 beforeEach(() => {
@@ -72,7 +71,7 @@ describe('accessibility', () => {
     expect(isShown('your identity')).toBe(false)
   })
 
-  it('moves focus into the Leader card, closes it with Escape and gives focus back', () => {
+  it('moves focus into a face-up identity, closes it with Escape and gives focus back', () => {
     startGame()
     const see = screen.getByRole('button', { name: 'See' })
     see.focus()
@@ -80,8 +79,18 @@ describe('accessibility', () => {
     const close = screen.getByRole('button', { name: 'tap to close' })
     expect(document.activeElement).toBe(close)
     fireEvent.keyDown(close, { key: 'Escape' })
-    expect(isShown('leader: Bob')).toBe(false)
+    expect(screen.queryByText('identity: Bob')).toBeNull()
     expect(document.activeElement).toBe(see)
+  })
+
+  it('lets keyboard users cancel an unveil with Escape', () => {
+    startGame()
+    fireEvent.click(screen.getByRole('button', { name: 'Unveil my identity' }))
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    expect(document.activeElement).toBe(cancel)
+    fireEvent.keyDown(cancel, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Unveil my identity' })).toBeTruthy()
+    expect(FakeSocket.last.sent).toEqual([])
   })
 
   it('closes the guide with Escape and gives focus back to the link', async () => {

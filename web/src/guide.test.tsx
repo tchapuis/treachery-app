@@ -61,8 +61,7 @@ describe('Guide', () => {
       phase: 'playing',
       hostId: 'p1',
       settings: { playerCount: 4, rarities: ['U'] },
-      players: [{ id: 'p1', name: 'Alice', ready: true, connected: true }],
-      leader: { playerId: 'p1', card: cards[0] },
+      players: [{ id: 'p1', name: 'Alice', ready: true, connected: true, card: cards[0] }],
     }
     render(<App />)
     act(() => {

@@ -9,7 +9,8 @@ Real-time role and identity draw for the MTG Treachery variant, for a group of f
 - Always target the latest stable versions (check online, not from memory).
 
 ## Rules
-- Identity secrecy: the server never sends a client another player's card, except the Leader's. `TestGameFlowKeepsIdentitiesSecret` enforces it.
+- Identity secrecy: a broadcast carries a player's card **if and only if** that player is unveiled (`Player.Unveiled`); the Leader is unveiled at the draw. A face-down identity only ever reaches its owner, through the `you` message. `TestGameFlowKeepsIdentitiesSecret` enforces it. Unveiling is self-service (the message carries no target), one-way and idempotent.
+- `playerView` and `savedPlayer` are built with named fields on purpose: a positional literal would silently move a card to another seat the next time a field is added.
 - No hardcoded UI text: everything goes through `web/src/i18n.ts` (`en` is the reference, `fr` is typed `Record<Key, string>` so it must be complete). The server only sends error codes (`appError{Code, Params}`), translated client-side via `error_<code>`; `TestEveryErrorCodeIsTranslated` enforces it.
 - Cards and the role distribution live only in Go (`cards.json`, `distribution` in `draw.go`); the client reads them from `GET /api/catalog` (rules page, card gallery). Don't copy them into TS.
 - The WebSocket message format is duplicated: Go structs in `room.go`, TS types in `web/src/types.ts`. Change both.

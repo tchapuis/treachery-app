@@ -39,7 +39,7 @@ func TestRoomsSurviveRestart(t *testing.T) {
 	c := dial(t, after)
 	c.send(map[string]any{"type": "resume", "code": code, "token": welcomes[2]["token"]})
 	room := c.waitFor("room", nil)
-	if room["phase"] != "playing" || room["leader"] == nil || len(room["players"].([]any)) != 4 {
+	if room["phase"] != "playing" || len(faceUp(room)) != 1 || len(room["players"].([]any)) != 4 {
 		t.Fatalf("restored room = %v", room)
 	}
 	if got := c.waitFor("you", nil)["card"].(map[string]any)["id"]; got != card {
@@ -69,6 +69,38 @@ func TestRestoredLobbyPlayersGetFullGrace(t *testing.T) {
 	reloaded.load(path, time.Now())
 	if len(reloaded.rooms) != 0 {
 		t.Fatal("sweep did not persist the removed room")
+	}
+}
+
+// A redeploy mid-game must not turn a face-up identity face down again.
+func TestUnveiledIdentitySurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rooms.json")
+	first, before := persistentServer(t, path)
+	code, clients, welcomes := setupRoom(t, before)
+	for _, c := range clients {
+		c.send(map[string]any{"type": "ready", "value": true})
+	}
+	clients[0].waitFor("room", playersReady(4))
+	clients[0].send(map[string]any{"type": "start"})
+
+	i := 0
+	for j, c := range clients {
+		if c.waitFor("you", nil)["role"] != "Leader" {
+			i = j
+			break
+		}
+	}
+	clients[i].send(map[string]any{"type": "unveil"})
+	clients[i].waitFor("room", upCount(2))
+	settle(first)
+
+	_, after := persistentServer(t, path)
+	c := dial(t, after)
+	c.send(map[string]any{"type": "resume", "code": code, "token": welcomes[i]["token"]})
+
+	up := faceUp(c.waitFor("room", nil))
+	if len(up) != 2 || up[seatNames[i]] == nil {
+		t.Fatalf("face up after the restart: %v, want the Leader and %s", up, seatNames[i])
 	}
 }
 

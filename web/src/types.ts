@@ -26,6 +26,8 @@ export interface PlayerView {
   name: string
   ready: boolean
   connected: boolean
+  // set only for an unveiled player: a face-up identity is public. The Leader is unveiled at the draw.
+  card?: Card
 }
 
 export interface RoomView {
@@ -35,7 +37,6 @@ export interface RoomView {
   hostId: string
   settings: Settings
   players: PlayerView[]
-  leader?: { playerId: string; card: Card }
 }
 
 export type ServerMsg =
@@ -50,6 +51,7 @@ export type ClientMsg =
   | { type: 'resume'; code: string; token: string }
   | { type: 'ready'; value: boolean }
   | { type: 'start' }
+  | { type: 'unveil' }
   | { type: 'reset' }
 
 // GET /api/catalog; distribution is keyed by player count, in roleOrder.

@@ -12,11 +12,12 @@ import (
 // Snapshot types are separate from Player/Room on purpose: they hold tokens and
 // cards, so they must never be reused for anything sent to clients.
 type savedPlayer struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Token string `json:"token"`
-	Ready bool   `json:"ready"`
-	Card  *Card  `json:"card,omitempty"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Token    string `json:"token"`
+	Ready    bool   `json:"ready"`
+	Unveiled bool   `json:"unveiled,omitempty"`
+	Card     *Card  `json:"card,omitempty"`
 }
 
 type savedRoom struct {
@@ -50,7 +51,9 @@ func (s *Server) load(path string, now time.Time) {
 		room := &Room{Code: sr.Code, Phase: sr.Phase, HostID: sr.HostID, Settings: sr.Settings, touched: sr.Touched}
 		for _, sp := range sr.Players {
 			// everyone is disconnected after a reboot: give them the full lobby grace from now
-			room.Players = append(room.Players, &Player{ID: sp.ID, Name: sp.Name, token: sp.Token, Ready: sp.Ready, card: sp.Card, leftAt: now})
+			// a Leader is face up by the rules, which also upgrades snapshots written before Unveiled existed
+			unveiled := sp.Unveiled || (sp.Card != nil && sp.Card.Role == "Leader")
+			room.Players = append(room.Players, &Player{ID: sp.ID, Name: sp.Name, token: sp.Token, Ready: sp.Ready, Unveiled: unveiled, card: sp.Card, leftAt: now})
 		}
 		s.rooms[room.Code] = room
 	}
@@ -67,7 +70,7 @@ func (s *Server) save() {
 	for _, r := range s.rooms {
 		sr := savedRoom{Code: r.Code, Phase: r.Phase, HostID: r.HostID, Settings: r.Settings, Touched: r.touched}
 		for _, p := range r.Players {
-			sr.Players = append(sr.Players, savedPlayer{p.ID, p.Name, p.token, p.Ready, p.card})
+			sr.Players = append(sr.Players, savedPlayer{ID: p.ID, Name: p.Name, Token: p.token, Ready: p.Ready, Unveiled: p.Unveiled, Card: p.card})
 		}
 		saved = append(saved, sr)
 	}
