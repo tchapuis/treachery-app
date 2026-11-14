@@ -53,6 +53,7 @@ export type ClientMsg =
   | { type: 'start' }
   | { type: 'unveil' }
   | { type: 'reset' }
+  | { type: 'leave' }
 
 // GET /api/catalog; distribution is keyed by player count, in roleOrder.
 export interface Catalog {

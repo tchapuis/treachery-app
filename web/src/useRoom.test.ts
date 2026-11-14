@@ -131,4 +131,14 @@ describe('useRoom', () => {
     expect(() => result.current.send({ type: 'start' })).not.toThrow()
     expect(FakeSocket.last.sent).toEqual([])
   })
+  it('tells the server before leaving, so the nickname is free again', () => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    const { result } = renderHook(() => useRoom())
+    const sock = FakeSocket.last
+    act(() => sock.serverOpen())
+    act(() => result.current.leave())
+    expect(sock.sent.at(-1)).toEqual({ type: 'leave' })
+    expect(sock.readyState).toBe(FakeSocket.CLOSED)
+    expect(localStorage.getItem(SESSION_KEY)).toBeNull()
+  })
 })

@@ -329,3 +329,37 @@ func TestSweepKeepsBrieflyAwayPlayers(t *testing.T) {
 		t.Fatalf("lobbyGrace = %v: locked phones on the table must not lose their seat", lobbyGrace)
 	}
 }
+
+func TestLeaveFreesTheSeatAndHandsOverHost(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	host := dial(t, srv)
+	host.send(map[string]any{"type": "create", "nickname": "Alice", "playerCount": 4, "rarities": []string{"U"}})
+	code := host.waitFor("welcome", nil)["code"].(string)
+	bob := dial(t, srv)
+	bob.send(map[string]any{"type": "join", "code": code, "nickname": "Bob"})
+	bobID := bob.waitFor("welcome", nil)["playerId"]
+
+	host.send(map[string]any{"type": "leave"})
+	bob.waitFor("room", func(m map[string]any) bool { return m["hostId"] == bobID && len(m["players"].([]any)) == 1 })
+
+	again := dial(t, srv)
+	again.send(map[string]any{"type": "join", "code": code, "nickname": "Alice"})
+	if m := again.waitFor("welcome", nil); m["code"] != code {
+		t.Fatalf("Alice could not take a seat again: %v", again.msgs)
+	}
+}
+
+func TestLastPlayerLeavingRemovesTheLobby(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	host := dial(t, srv)
+	host.send(map[string]any{"type": "create", "nickname": "Alice", "playerCount": 4, "rarities": []string{"U"}})
+	code := host.waitFor("welcome", nil)["code"].(string)
+	host.send(map[string]any{"type": "leave"})
+	c := dial(t, srv)
+	c.send(map[string]any{"type": "join", "code": code, "nickname": "Bob"})
+	if got := errCode(c.waitFor("error", nil)); got != "roomNotFound" {
+		t.Fatalf("error = %v, want roomNotFound", got)
+	}
+}

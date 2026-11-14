@@ -257,6 +257,19 @@ func (s *Server) handle(cl *client, m *inMsg) error {
 		}
 		cl.player.Unveiled = true
 		s.broadcast(room)
+	case "leave":
+		room, p := cl.room, cl.player
+		if p == nil {
+			return nil
+		}
+		slog.Info("left", cl.logAttrs()...)
+		p.client, p.leftAt, cl.room, cl.player = nil, time.Now(), nil, nil
+		if room.Phase != "lobby" {
+			s.broadcast(room) // dealt cards stay at the table: the seat is kept
+			return nil
+		}
+		room.Players = slices.DeleteFunc(room.Players, func(x *Player) bool { return x == p })
+		s.afterRemoval(room)
 	case "reset":
 		room := cl.room
 		if room == nil || room.HostID != cl.player.ID {
@@ -349,21 +362,25 @@ func (s *Server) sweep(now time.Time) {
 			}
 			return gone
 		})
-		if len(room.Players) == 0 {
-			slog.Info("empty lobby removed", "room", code)
-			delete(s.rooms, code)
-			changed = true
-			continue
-		}
 		if len(room.Players) != before {
 			changed = true
-			if !slices.ContainsFunc(room.Players, func(p *Player) bool { return p.ID == room.HostID }) {
-				room.HostID = room.Players[0].ID
-				slog.Info("host transferred", "room", code, "player", room.Players[0].Name)
-			}
-			s.broadcast(room)
+			s.afterRemoval(room)
 		}
 	}
+}
+
+// afterRemoval deletes an empty lobby, or hands the host role over and tells the others.
+func (s *Server) afterRemoval(room *Room) {
+	if len(room.Players) == 0 {
+		slog.Info("empty lobby removed", "room", room.Code)
+		delete(s.rooms, room.Code)
+		return
+	}
+	if !slices.ContainsFunc(room.Players, func(p *Player) bool { return p.ID == room.HostID }) {
+		room.HostID = room.Players[0].ID
+		slog.Info("host transferred", "room", room.Code, "player", room.Players[0].Name)
+	}
+	s.broadcast(room)
 }
 
 func (s *Server) find(code string) (*Room, error) {

@@ -125,7 +125,15 @@ export function useRoom() {
 
   const leave = () => {
     saveSession(null)
-    location.href = '/'
+    const sock = ws.current
+    const home = () => (location.href = '/')
+    if (sock?.readyState !== WebSocket.OPEN) return home()
+    // close before navigating so the server gets `leave` and frees the nickname
+    ws.current = null
+    sock.onclose = home
+    sock.send(JSON.stringify({ type: 'leave' } satisfies ClientMsg))
+    sock.close()
+    setTimeout(home, 1000)
   }
 
   return { connected, room, me, playerId, error, kicked, send, leave }
