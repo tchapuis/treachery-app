@@ -43,3 +43,7 @@ Rooms are saved to `/data/rooms.json` (the `app_data` volume) on every change an
 
 Identities, texts and artwork: [mtgtreachery.net](https://mtgtreachery.net/). Each illustration belongs to its artist, credited on the card.
 Magic: The Gathering © Wizards of the Coast. Unofficial project, private use.
+
+## License
+
+The code is under the [MIT License](LICENSE). It does not cover the card data (`backend/cards.json`) or the card images (`web/public/cards/`): those belong to their owners listed above.
