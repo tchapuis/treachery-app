@@ -31,6 +31,7 @@ type inMsg struct {
 	Code        string   `json:"code"`
 	Token       string   `json:"token"`
 	Value       bool     `json:"value"`
+	PlayerID    string   `json:"playerId"`
 }
 
 type Settings struct {
@@ -265,11 +266,45 @@ func (s *Server) handle(cl *client, m *inMsg) error {
 		slog.Info("left", cl.logAttrs()...)
 		p.client, p.leftAt, cl.room, cl.player = nil, time.Now(), nil, nil
 		if room.Phase != "lobby" {
-			s.broadcast(room) // dealt cards stay at the table: the seat is kept
+			// dealt cards stay at the table: the seat is kept, but someone else must be able to reset
+			if room.HostID == p.ID {
+				others := slices.DeleteFunc(slices.Clone(room.Players), func(x *Player) bool { return x == p })
+				if i := slices.IndexFunc(others, func(x *Player) bool { return x.client != nil }); i >= 0 {
+					room.HostID = others[i].ID
+				} else if len(others) > 0 {
+					room.HostID = others[0].ID
+				}
+			}
+			s.broadcast(room)
 			return nil
 		}
 		room.Players = slices.DeleteFunc(room.Players, func(x *Player) bool { return x == p })
 		s.afterRemoval(room)
+	case "kick":
+		room := cl.room
+		if room == nil || room.HostID != cl.player.ID || room.Phase != "lobby" || m.PlayerID == cl.player.ID {
+			return nil
+		}
+		i := slices.IndexFunc(room.Players, func(p *Player) bool { return p.ID == m.PlayerID })
+		if i < 0 {
+			return nil
+		}
+		p := room.Players[i]
+		slog.Info("kicked", "room", room.Code, "player", p.Name)
+		room.Players = slices.Delete(room.Players, i, i+1)
+		if pc := p.client; pc != nil {
+			pc.room, pc.player = nil, nil // the socket stays open: the kicked phone lands back home
+			pc.write(map[string]string{"type": "kicked"})
+		}
+		s.afterRemoval(room)
+	case "transferHost":
+		room := cl.room
+		if room == nil || room.HostID != cl.player.ID || m.PlayerID == cl.player.ID ||
+			!slices.ContainsFunc(room.Players, func(p *Player) bool { return p.ID == m.PlayerID }) {
+			return nil
+		}
+		room.HostID = m.PlayerID
+		s.broadcast(room)
 	case "reset":
 		room := cl.room
 		if room == nil || room.HostID != cl.player.ID {

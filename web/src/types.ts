@@ -44,6 +44,7 @@ export type ServerMsg =
   | RoomView
   | { type: 'you'; role: Role; card: Card }
   | { type: 'error'; error: AppError }
+  | { type: 'kicked' }
 
 export type ClientMsg =
   | { type: 'create'; nickname: string; playerCount: number; rarities: Rarity[] }
@@ -54,6 +55,8 @@ export type ClientMsg =
   | { type: 'unveil' }
   | { type: 'reset' }
   | { type: 'leave' }
+  | { type: 'kick'; playerId: string }
+  | { type: 'transferHost'; playerId: string }
 
 // GET /api/catalog; distribution is keyed by player count, in roleOrder.
 export interface Catalog {

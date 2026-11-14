@@ -363,3 +363,63 @@ func TestLastPlayerLeavingRemovesTheLobby(t *testing.T) {
 		t.Fatalf("error = %v, want roomNotFound", got)
 	}
 }
+
+func TestKickFreesTheNickname(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	code, clients, welcomes := setupRoom(t, srv)
+	host, bob := clients[0], clients[1]
+	host.send(map[string]any{"type": "kick", "playerId": welcomes[1]["playerId"]})
+	bob.waitFor("kicked", nil)
+	host.waitFor("room", func(m map[string]any) bool { return len(m["players"].([]any)) == 3 })
+
+	again := dial(t, srv)
+	again.send(map[string]any{"type": "join", "code": code, "nickname": "Bob"})
+	again.waitFor("welcome", nil)
+}
+
+func TestOnlyHostKicksAndOnlyInLobby(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	_, clients, welcomes := setupRoom(t, srv)
+	host, bob := clients[0], clients[1]
+	bob.send(map[string]any{"type": "kick", "playerId": welcomes[2]["playerId"]})
+	host.send(map[string]any{"type": "kick", "playerId": welcomes[0]["playerId"]}) // self
+	for _, c := range clients {
+		c.send(map[string]any{"type": "ready", "value": true})
+	}
+	if n := len(host.waitFor("room", playersReady(4))["players"].([]any)); n != 4 {
+		t.Fatalf("lobby players = %d, want 4", n)
+	}
+	host.send(map[string]any{"type": "start"})
+	host.waitFor("room", func(m map[string]any) bool { return m["phase"] == "playing" })
+	host.send(map[string]any{"type": "kick", "playerId": welcomes[3]["playerId"]})
+	host.send(map[string]any{"type": "transferHost", "playerId": welcomes[1]["playerId"]})
+	m := host.waitFor("room", func(m map[string]any) bool { return m["hostId"] == welcomes[1]["playerId"] })
+	if n := len(m["players"].([]any)); n != 4 {
+		t.Fatalf("players after an in-game kick = %d, want 4", n)
+	}
+}
+
+func TestTransferHost(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	_, clients, welcomes := setupRoom(t, srv)
+	host, bob := clients[0], clients[1]
+	bobID := welcomes[1]["playerId"]
+	bob.send(map[string]any{"type": "transferHost", "playerId": bobID}) // not host yet: ignored
+	host.send(map[string]any{"type": "transferHost", "playerId": bobID})
+	bob.waitFor("room", func(m map[string]any) bool { return m["hostId"] == bobID })
+}
+
+func TestHostLeavingMidGameHandsOver(t *testing.T) {
+	srv := httptest.NewServer(routes(NewServer()))
+	defer srv.Close()
+	clients, _ := playGame(t, srv)
+	clients[0].send(map[string]any{"type": "leave"})
+	oldHost := clients[0].msgs[0]["playerId"]
+	m := clients[1].waitFor("room", func(m map[string]any) bool { return m["hostId"] != oldHost })
+	if m["phase"] != "playing" {
+		t.Fatalf("phase = %v, want playing", m["phase"])
+	}
+}

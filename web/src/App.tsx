@@ -314,8 +314,8 @@ function Lobby({
             p.id === playerId && t('you'),
             !p.ready && p.connected && t('notReady'),
           ].filter(Boolean)
-          return (
-            <li key={p.id} className={p.connected ? '' : 'away'}>
+          const row = (trigger: ReactNode, panel: ReactNode) => (
+            <li key={p.id} className={`${p.connected ? '' : 'away'} ${panel ? 'open' : ''}`}>
               <Diamond className={p.ready ? 'gold' : 'hollow'} />
               <span className="seat-name">{p.name}</span>
               {!p.connected ? (
@@ -323,7 +323,16 @@ function Lobby({
               ) : (
                 notes.length > 0 && <span className="note">{notes.join(', ')}</span>
               )}
+              {trigger}
+              {panel}
             </li>
+          )
+          return isHost && p.id !== playerId ? (
+            <HostActions key={p.id} player={p} canKick send={send}>
+              {row}
+            </HostActions>
+          ) : (
+            row(null, null)
           )
         })}
         {Array.from({ length: free }, (_, i) => (
@@ -449,31 +458,42 @@ function Game({
 
       <h2 className="caption gap">{t('table')}</h2>
       <ul className="identities">
-        {room.players.map((p) => (
-          <li key={p.id} className={`identity ${p.card ? '' : 'face-down'}`}>
-            {p.card ? <img src={`/cards/${p.card.id}.jpg`} alt="" /> : <Diamond className="hollow" />}
-            <div>
-              <div className="identity-top">
-                <span className="identity-name">{p.name}</span>
+        {room.players.map((p) => {
+          const row = (trigger: ReactNode, panel: ReactNode) => (
+            <li key={p.id} className={`identity ${p.card ? '' : 'face-down'}`}>
+              {p.card ? <img src={`/cards/${p.card.id}.jpg`} alt="" /> : <Diamond className="hollow" />}
+              <div>
+                <div className="identity-top">
+                  <span className="identity-name">{p.name}</span>
+                  {trigger}
+                  {p.card ? (
+                    <button className="link underline" onClick={() => setOpen(p)}>
+                      {t('see')}
+                    </button>
+                  ) : (
+                    p.id === playerId && <span className="note">{t('you')}</span>
+                  )}
+                </div>
                 {p.card ? (
-                  <button className="link underline" onClick={() => setOpen(p)}>
-                    {t('see')}
-                  </button>
+                  <>
+                    <span className={`italic role-${p.card.role}`}>{t('identityLine', { role: role(p.card.role) })}</span>
+                    <span className="muted small">{p.card.name}</span>
+                  </>
                 ) : (
-                  p.id === playerId && <span className="note">{t('you')}</span>
+                  <span className="muted italic small">{t('faceDown')}</span>
                 )}
+                {panel}
               </div>
-              {p.card ? (
-                <>
-                  <span className={`italic role-${p.card.role}`}>{t('identityLine', { role: role(p.card.role) })}</span>
-                  <span className="muted small">{p.card.name}</span>
-                </>
-              ) : (
-                <span className="muted italic small">{t('faceDown')}</span>
-              )}
-            </div>
-          </li>
-        ))}
+            </li>
+          )
+          return room.hostId === playerId && p.id !== playerId ? (
+            <HostActions key={p.id} player={p} canKick={false} send={send}>
+              {row}
+            </HostActions>
+          ) : (
+            row(null, null)
+          )
+        })}
       </ul>
       {open?.card && (
         <Reveal
@@ -515,7 +535,12 @@ function Game({
       {me &&
         !unveiled &&
         (asking ? (
-          <UnveilConfirm cancel={() => setAsking(false)} confirm={() => send({ type: 'unveil' })} />
+          <Confirm
+            question={t('confirmUnveil')}
+            action={t('unveilNow')}
+            cancel={() => setAsking(false)}
+            confirm={() => send({ type: 'unveil' })}
+          />
         ) : (
           <button className="outline unveil" onClick={() => setAsking(true)}>
             {t('unveil')}
@@ -534,7 +559,17 @@ function Game({
 // Asked in the page rather than through confirm(): a browser that suppresses dialogs
 // (embedded view, "block further dialogs") answers no without showing anything, and the
 // unveil would be swallowed in silence.
-function UnveilConfirm({ cancel, confirm }: { cancel: () => void; confirm: () => void }) {
+function Confirm({
+  question,
+  action,
+  cancel,
+  confirm,
+}: {
+  question: string
+  action: string
+  cancel: () => void
+  confirm: () => void
+}) {
   const { t } = useI18n()
   const cancelRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -542,17 +577,75 @@ function UnveilConfirm({ cancel, confirm }: { cancel: () => void; confirm: () =>
   }, [])
   return (
     <div className="confirm" onKeyDown={(e) => e.key === 'Escape' && cancel()}>
-      <p className="italic">{t('confirmUnveil')}</p>
+      <p className="italic">{question}</p>
       <div className="confirm-actions">
         <button ref={cancelRef} className="link underline" onClick={cancel}>
           {t('cancel')}
         </button>
         <button className="cta gold" onClick={confirm}>
-          {t('unveilNow')}
+          {action}
         </button>
       </div>
     </div>
   )
+}
+
+// Host-only controls on another player's row; the caller places the trigger and the panel.
+function HostActions({
+  player,
+  canKick,
+  send,
+  children,
+}: {
+  player: PlayerView
+  canKick: boolean
+  send: Send
+  children: (trigger: ReactNode, panel: ReactNode) => ReactNode
+}) {
+  const { t } = useI18n()
+  const [step, setStep] = useState<'menu' | 'kick' | 'host' | null>(null)
+  const close = () => setStep(null)
+  const trigger = (
+    <button
+      className="link more"
+      aria-expanded={step !== null}
+      aria-label={t('playerActions', { name: player.name })}
+      onClick={() => setStep(step ? null : 'menu')}
+    >
+      <span aria-hidden>···</span>
+    </button>
+  )
+  let panel: ReactNode = null
+  if (step === 'menu') {
+    panel = (
+      <div className="host-panel">
+        {canKick && (
+          <button className="outline" onClick={() => setStep('kick')}>
+            {t('kick')}
+          </button>
+        )}
+        <button className="outline" onClick={() => setStep('host')}>
+          {t('makeHost')}
+        </button>
+      </div>
+    )
+  } else if (step) {
+    const kick = step === 'kick'
+    panel = (
+      <div className="host-panel">
+        <Confirm
+          question={t(kick ? 'confirmKick' : 'confirmMakeHost', { name: player.name })}
+          action={t(kick ? 'kick' : 'makeHost')}
+          cancel={close}
+          confirm={() => {
+            close()
+            send({ type: kick ? 'kick' : 'transferHost', playerId: player.id })
+          }}
+        />
+      </div>
+    )
+  }
+  return children(trigger, panel)
 }
 
 function Guide({ page, setPage, close }: { page: GuidePage; setPage: OpenGuide; close: () => void }) {

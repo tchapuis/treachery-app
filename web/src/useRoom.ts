@@ -74,6 +74,13 @@ export function useRoom() {
           case 'you':
             setMe(msg.card)
             break
+          case 'kicked':
+            saveSession(null)
+            setPlayerId('')
+            setRoom(null)
+            setMe(null)
+            setError({ code: 'kickedByHost' })
+            break
           case 'error':
             if (resuming.current) {
               // our seat is gone (server restarted or room expired): start fresh

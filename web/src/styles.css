@@ -148,6 +148,11 @@ button:disabled { cursor: default; }
 .note { margin-left: auto; flex: none; font-size: 15px; font-style: italic; color: var(--muted); }
 .note.danger { color: var(--danger); }
 .seats .away .seat-name { color: var(--muted); }
+.seats li.open { flex-wrap: wrap; padding-bottom: 12px; }
+.link.more { min-width: 44px; color: var(--gold); letter-spacing: 0.1em; }
+.identity-top .link.more { min-height: 0; margin-left: auto; }
+.host-panel { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; }
+.host-panel .confirm { margin-top: 0; }
 .seats .away .diamond { opacity: 0.4; }
 .seats .free { background: none; border-style: dashed; font-size: 18px; font-style: italic; color: var(--faint); }
 .legend { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; color: var(--muted); }
